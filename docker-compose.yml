@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cashin-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cashin
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d cashin']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - cashin_pgdata:/var/lib/postgresql/data
+
+volumes:
+  cashin_pgdata:

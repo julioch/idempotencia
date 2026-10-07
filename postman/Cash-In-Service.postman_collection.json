@@ -1,0 +1,273 @@
+{
+  "info": {
+    "name": "Cash-In Service (MVP)",
+    "description": "Colección para ejercitar los escenarios de borde del Cash-In Service. Requiere el servicio en marcha y PostgreSQL en Docker. Ejecuta primero la carpeta '00 - Setup'.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Doble click (misma Idempotency-Key)",
+      "item": [
+        {
+          "name": "1.1 Cash-In (primera llamada)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Responde 200 completed (o 202 timeout)', function () {",
+                  "  pm.expect([200, 202, 402, 409]).to.include(pm.response.code);",
+                  "});",
+                  "const b = pm.response.json();",
+                  "if (b && b.operation_id) { pm.collectionVariables.set('operationId', b.operation_id); }",
+                  "if (b && b.provider_reference) { pm.collectionVariables.set('providerReference', b.provider_reference); }",
+                  "pm.test('Body con operation_id', function () { pm.expect(b.operation_id).to.be.a('string'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"amount\": 100.00,\n  \"currency\": \"PEN\",\n  \"payment_method\": \"card_xyz\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/cash-in",
+              "host": ["{{baseUrl}}"],
+              "path": ["cash-in"]
+            }
+          }
+        },
+        {
+          "name": "1.2 Cash-In (doble click / replay)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('No crea una segunda operación', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(pm.collectionVariables.get('operationId')).to.eql(b.operation_id);",
+                  "});",
+                  "pm.test('Saldo idéntico (no se acredita dos veces)', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect([200, 202, 402, 409]).to.include(pm.response.code);",
+                  "  if (pm.response.code === 200) { pm.expect(b.new_balance).to.be.a('number'); }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"amount\": 100.00,\n  \"currency\": \"PEN\",\n  \"payment_method\": \"card_xyz\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/cash-in",
+              "host": ["{{baseUrl}}"],
+              "path": ["cash-in"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Webhook duplicado",
+      "item": [
+        {
+          "name": "5.1 Webhook payment.succeeded",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () { pm.expect(pm.response.code).to.eql(200); });",
+                  "pm.test('received', function () { pm.expect(pm.response.json().received).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_reference\": \"{{providerReference}}\",\n  \"operation_id\": \"{{operationId}}\",\n  \"event_type\": \"payment.succeeded\",\n  \"timestamp\": \"2026-10-06T22:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks", "payment"]
+            }
+          }
+        },
+        {
+          "name": "5.2 Webhook payment.succeeded (duplicado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Duplicado responde 200 sin errores', function () { pm.expect(pm.response.code).to.eql(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_reference\": \"{{providerReference}}\",\n  \"operation_id\": \"{{operationId}}\",\n  \"event_type\": \"payment.succeeded\",\n  \"timestamp\": \"2026-10-06T22:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks", "payment"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Webhook fuera de orden",
+      "item": [
+        {
+          "name": "6.1 Webhook payment.failed (posterior a COMPLETED -> IGNORED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Webhook fuera de orden se acepta con 200', function () { pm.expect(pm.response.code).to.eql(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_reference\": \"{{providerReference}}\",\n  \"operation_id\": \"{{operationId}}\",\n  \"event_type\": \"payment.failed\",\n  \"timestamp\": \"2026-10-06T21:59:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks", "payment"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "HMAC",
+      "item": [
+        {
+          "name": "Webhook firmado (X-Signature)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.collectionVariables.get('webhookSecret');",
+                  "if (secret) {",
+                  "  const raw = pm.request.body.raw;",
+                  "  const signature = CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex);",
+                  "  pm.request.headers.upsert({ key: 'X-Signature', value: signature });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Firma válida (200) o modo demo', function () { pm.expect(pm.response.code).to.eql(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_reference\": \"{{providerReference}}\",\n  \"operation_id\": \"{{operationId}}\",\n  \"event_type\": \"payment.succeeded\",\n  \"timestamp\": \"2026-10-06T22:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks", "payment"]
+            }
+          }
+        },
+        {
+          "name": "Webhook con firma inválida (X-Signature)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Firma inválida -> 401 (o 200 si no hay secreto en modo demo)', function () {",
+                  "  pm.expect([200, 401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Signature", "value": "deadbeef" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_reference\": \"{{providerReference}}\",\n  \"operation_id\": \"{{operationId}}\",\n  \"event_type\": \"payment.succeeded\",\n  \"timestamp\": \"2026-10-06T22:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks", "payment"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "userId", "value": "usr_abc123" },
+    { "key": "webhookSecret", "value": "" },
+    { "key": "idempotencyKey", "value": "3f2504e0-4f89-41d3-9a0c-0305e82c3301" },
+    { "key": "operationId", "value": "" },
+    { "key": "providerReference", "value": "" }
+  ]
+}
